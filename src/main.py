@@ -80,6 +80,8 @@ def print_status(fridge_path: str, preferences_path: str):
 
 def main():
     """Main function to run the interactive agent."""
+    agent_executor = None  # Initialize to None for error handling
+    
     try:
         # Load configuration
         config = load_config()
@@ -117,7 +119,9 @@ def main():
                 
                 # Handle special commands
                 if user_input.lower() in ['/exit', '/quit']:
-                    console.print("\n[yellow]Thanks for using Fridge Recipe Assistant! Goodbye! 👋[/yellow]")
+                    console.print("\n[yellow]Analyzing session and updating files...[/yellow]")
+                    agent_executor.end_session()
+                    console.print("[yellow]Thanks for using Fridge Recipe Assistant! Goodbye! 👋[/yellow]")
                     break
                 
                 if user_input.lower() == '/help':
@@ -149,7 +153,9 @@ def main():
                 console.print()
                 
             except KeyboardInterrupt:
-                console.print("\n\n[yellow]Interrupted. Type /exit to quit or continue asking questions.[/yellow]\n")
+                console.print("\n\n[yellow]Interrupted. Analyzing session and updating files...[/yellow]")
+                agent_executor.end_session()
+                console.print("[yellow]Session saved. Type /exit to quit or continue asking questions.[/yellow]\n")
                 continue
             except Exception as e:
                 console.print(f"\n[red]Error processing request: {e}[/red]\n")
@@ -158,6 +164,15 @@ def main():
                     console.print(f"[red]{traceback.format_exc()}[/red]")
                 continue
     
+    except KeyboardInterrupt:
+        console.print("\n\n[yellow]Exiting... Analyzing session and updating files...[/yellow]")
+        if agent_executor is not None:
+            try:
+                agent_executor.end_session()
+            except:
+                pass
+        console.print("[yellow]Goodbye! 👋[/yellow]")
+        sys.exit(0)
     except FileNotFoundError as e:
         console.print(f"[red]Configuration error: {e}[/red]")
         console.print("[yellow]Make sure config.yaml exists in the project root.[/yellow]")

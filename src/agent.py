@@ -1,10 +1,10 @@
-"""Agent initialization and setup using simple tool-calling approach."""
+"""Simple agent for reading and writing fridge and preference files."""
 from langchain_ollama import OllamaLLM
 from langchain_core.tools import BaseTool
-from langchain_core.prompts import PromptTemplate
+from langchain_core.messages import HumanMessage, AIMessage
 from typing import List, Dict, Any
 import sys
-import re
+from datetime import datetime
 
 
 def initialize_llm(ollama_config: Dict[str, Any]) -> OllamaLLM:
@@ -31,118 +31,146 @@ def initialize_llm(ollama_config: Dict[str, Any]) -> OllamaLLM:
         sys.exit(1)
 
 
-class SimpleReActAgent:
-    """Simple ReAct agent implementation."""
+class SimpleCookingAgent:
+    """Simple cooking assistant agent with session tracking."""
     
-    def __init__(self, llm: OllamaLLM, tools: List[BaseTool], max_iterations: int = 15, verbose: bool = True):
+    def __init__(self, llm: OllamaLLM, tools: List[BaseTool], verbose: bool = True):
         self.llm = llm
         self.tools = {tool.name: tool for tool in tools}
-        self.max_iterations = max_iterations
         self.verbose = verbose
-        
-        # Create tool descriptions
-        tool_descriptions = "\n".join([
-            f"- {tool.name}: {tool.description}"
-            for tool in tools
-        ])
-        
-        self.prompt_template = PromptTemplate(
-            input_variables=["input", "tool_descriptions", "agent_scratchpad"],
-            template="""You are a helpful cooking assistant that helps users manage their fridge inventory and suggests recipes based on what they have available and their preferences.
-
-You have access to the following tools:
-
-{tool_descriptions}
-
-Use the following format:
-
-Thought: Think about what you need to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
-
-Important guidelines:
-- Always read FRIDGE.md to check available ingredients before suggesting recipes
-- Always read My-Preference.md to understand dietary restrictions and preferences
-- When suggesting recipes, consider expiration dates and use items that will expire soon
-- Provide clear, step-by-step cooking instructions
-- When updating files with write_file, provide the complete updated content
-- Be friendly and helpful in your responses
-
-Begin!
-
-Question: {input}
-{agent_scratchpad}"""
-        )
-        
-        self.tool_names = ", ".join(self.tools.keys())
+        self.chat_history = []  # Store conversation history as list of messages
+        self.session_interactions = []
         
     def invoke(self, inputs: Dict[str, str]) -> Dict[str, str]:
-        """Run the agent."""
+        """Run the agent with automatic file reading."""
         user_input = inputs.get("input", "")
-        agent_scratchpad = ""
         
-        for iteration in range(self.max_iterations):
-            # Format the prompt
-            prompt = self.prompt_template.format(
-                input=user_input,
-                tool_descriptions="\n".join([f"- {name}: {tool.description}" for name, tool in self.tools.items()]),
-                tool_names=self.tool_names,
-                agent_scratchpad=agent_scratchpad
-            )
+        # Automatically read both files to provide context
+        fridge_content = ""
+        preferences_content = ""
+        
+        try:
+            if "read_file" in self.tools:
+                fridge_content = self.tools["read_file"].invoke("FRIDGE.md")
+                preferences_content = self.tools["read_file"].invoke("My-Preference.md")
+        except Exception as e:
+            if self.verbose:
+                print(f"Note: Could not read files: {e}")
+        
+        # Build a comprehensive prompt with context
+        prompt = f"""You are a helpful cooking assistant. You help users manage their fridge inventory and suggest recipes.
+
+Current Fridge Inventory:
+{fridge_content}
+
+User's Food Preferences:
+{preferences_content}
+
+User's Question: {user_input}
+
+Please provide a helpful, friendly response. If the user asks about what's in the fridge, summarize the contents. If they ask for recipe suggestions, consider their preferences and what ingredients are available. If they want to update the fridge, acknowledge what should be changed.
+
+Your response:"""
+
+        if self.verbose:
+            print("\n--- Processing Request ---\n")
+        
+        # Get LLM response
+        response = self.llm.invoke(prompt)
+        
+        if self.verbose:
+            print(f"Response generated\n")
+        
+        # Store interaction in session
+        self.session_interactions.append({
+            "timestamp": datetime.now().isoformat(),
+            "user_input": user_input,
+            "response": response
+        })
+        
+        # Save to chat history
+        self.chat_history.append({"role": "user", "content": user_input})
+        self.chat_history.append({"role": "assistant", "content": response})
+        
+        return {"output": response}
+    
+    def end_session(self):
+        """Analyze session and update preference file if needed."""
+        if not self.session_interactions:
+            return
+        
+        try:
+            # Step 1: Build session summary from interactions
+            session_summary = "\n\n".join([
+                f"User: {interaction['user_input']}\nAssistant: {interaction['response']}"
+                for interaction in self.session_interactions
+            ])
+            
+            # Step 2: Use LLM to generate a summary including food preferences/allergies
+            summary_prompt = f"""Analyze this cooking assistant session and create a concise summary.
+
+Session Conversation:
+{session_summary}
+
+Please provide a summary that includes:
+1. Main topics discussed
+2. Any food preferences mentioned (likes, dislikes, favorite cuisines, etc.)
+3. Any dietary restrictions or allergies mentioned
+4. Any other relevant information about the user's food habits
+
+If no food preferences or allergies were mentioned, explicitly state "No food preferences or allergies mentioned."
+
+Summary:"""
+
+            session_analysis = self.llm.invoke(summary_prompt)
             
             if self.verbose:
-                print(f"\n--- Iteration {iteration + 1} ---")
+                print(f"\n--- Session Summary ---")
+                print(session_analysis)
+                print()
             
-            # Get LLM response
-            response = self.llm.invoke(prompt)
+            # Step 3: Read current preferences and compare with summary
+            preferences_content = self.tools["read_file"].invoke("My-Preference.md")
             
-            if self.verbose:
-                print(f"LLM Response:\n{response}\n")
+            comparison_prompt = f"""Compare the session summary with the current preferences file and determine if updates are needed.
+
+Current Preferences File:
+{preferences_content}
+
+Session Summary:
+{session_analysis}
+
+Task: Determine if there is any NEW information in the session summary that should be added to the preferences file. Only add information that is NOT already present.
+
+If there is new information to add:
+- Provide the COMPLETE updated preferences file content in markdown format
+- Integrate the new information into the appropriate existing sections
+- Maintain the same structure and formatting as the original file
+
+If there is NO new information to add:
+- Respond with exactly: NO_UPDATES_NEEDED
+
+Your response:"""
+
+            comparison_result = self.llm.invoke(comparison_prompt)
             
-            # Check for Final Answer
-            if "Final Answer:" in response:
-                final_answer = response.split("Final Answer:")[-1].strip()
-                return {"output": final_answer}
-            
-            # Parse Action and Action Input
-            action_match = re.search(r"Action:\s*(.+?)(?:\n|$)", response)
-            action_input_match = re.search(r"Action Input:\s*(.+?)(?:\n|$)", response, re.DOTALL)
-            
-            if action_match and action_input_match:
-                action = action_match.group(1).strip()
-                action_input = action_input_match.group(1).strip()
+            # Step 4: Update My-Preference.md if necessary
+            if "NO_UPDATES_NEEDED" not in comparison_result:
+                # The LLM returned the updated file content directly
+                self.tools["write_file"].invoke({
+                    "file_path": "My-Preference.md",
+                    "text": comparison_result.strip()
+                })
                 
-                # Execute the tool
-                if action in self.tools:
-                    try:
-                        observation = self.tools[action].invoke(action_input)
-                        if self.verbose:
-                            print(f"Tool: {action}")
-                            print(f"Input: {action_input}")
-                            print(f"Observation: {observation[:200]}...\n")
-                    except Exception as e:
-                        observation = f"Error executing tool: {str(e)}"
-                        if self.verbose:
-                            print(f"Error: {observation}\n")
-                else:
-                    observation = f"Tool '{action}' not found. Available tools: {self.tool_names}"
-                    if self.verbose:
-                        print(f"Error: {observation}\n")
-                
-                # Update scratchpad
-                agent_scratchpad += f"\nThought: {response.split('Thought:')[-1].split('Action:')[0].strip()}"
-                agent_scratchpad += f"\nAction: {action}"
-                agent_scratchpad += f"\nAction Input: {action_input}"
-                agent_scratchpad += f"\nObservation: {observation}\n"
+                if self.verbose:
+                    print("✓ Preferences file updated based on session")
             else:
-                # If we can't parse, treat the response as the final answer
-                return {"output": response}
+                if self.verbose:
+                    print("✓ No preference updates needed")
         
-        return {"output": "Maximum iterations reached. Please try rephrasing your question."}
+        except Exception as e:
+            if self.verbose:
+                print(f"\nNote: Could not complete session analysis: {e}")
 
 
 def create_agent_executor(
@@ -160,10 +188,9 @@ def create_agent_executor(
     Returns:
         Configured agent executor
     """
-    agent = SimpleReActAgent(
+    agent = SimpleCookingAgent(
         llm=llm,
         tools=tools,
-        max_iterations=agent_config.get('max_iterations', 15),
         verbose=agent_config.get('verbose', True)
     )
     

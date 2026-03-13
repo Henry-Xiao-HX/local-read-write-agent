@@ -10,6 +10,7 @@ A Langchain-based AI agent that helps you manage your fridge inventory and sugge
 - 🤖 **Interactive CLI**: Natural language conversation interface
 - 🔒 **Local & Private**: Runs entirely on your machine using Ollama (no API keys needed)
 - 📝 **Persistent Storage**: Uses markdown files for easy viewing and editing
+- 🧠 **Session Tracking**: Automatically updates preferences and fridge inventory based on conversations
 
 ## Prerequisites
 
@@ -129,9 +130,69 @@ local-read-write-agent/
 ## How It Works
 
 1. **File Management Tools**: Uses Langchain's `FileManagementToolkit` for reading/writing markdown files
-2. **ReAct Agent**: Implements the ReAct (Reasoning + Acting) pattern for decision-making
+2. **Session Memory**: Tracks conversations using LangChain's `ConversationBufferMemory`
 3. **Ollama Integration**: Connects to local Ollama instance for LLM inference
 4. **Interactive Loop**: Provides a continuous conversation interface with rich formatting
+5. **Automatic Updates**: Analyzes sessions on exit to update preferences and fridge inventory
+
+## Session Tracking & Auto-Updates
+
+### How Session Tracking Works
+
+The agent now automatically tracks your entire conversation session and intelligently updates your files when you exit.
+
+#### 1. **Automatic Preference Learning**
+When you exit (using `/exit` or `/quit`), the agent:
+- Analyzes the entire conversation history
+- Compares it with your existing `My-Preference.md` file
+- Identifies **NEW** preferences, likes, dislikes, or dietary restrictions you mentioned
+- Automatically appends new preferences with a timestamp
+
+**Example:**
+```
+You: I really love spicy Korean food, and I'm trying to avoid processed foods
+Assistant: [suggests Korean recipes]
+[On exit: Automatically adds "Korean" to favorite cuisines and "avoid processed foods" to health goals]
+```
+
+#### 2. **Automatic Fridge Updates After Cooking**
+When you exit, the agent also:
+- Detects if a recipe was discussed and confirmed to be made
+- Identifies which ingredients from your fridge were used
+- Automatically updates `FRIDGE.md` by removing or reducing used ingredients
+- Updates the "Last updated" timestamp
+
+**Example:**
+```
+You: What can I make with chicken and tomatoes?
+Assistant: [suggests Chicken Tomato Pasta]
+You: Perfect! I'll make that tonight.
+[On exit: Automatically removes chicken and tomatoes from fridge inventory]
+```
+
+#### 3. **Smart Detection**
+- **No Duplicates**: Only adds NEW information not already in your preferences
+- **Context-Aware**: Understands the full conversation context
+- **Confirmation Required**: Only updates fridge when you clearly confirm making a recipe
+- **Safe Updates**: All changes are additive and timestamped
+
+### Session Exit Behavior
+
+When you type `/exit` or `/quit`:
+1. Agent displays: "Analyzing session and updating files..."
+2. Analyzes conversation for new preferences
+3. Checks if any recipes were made
+4. Updates files automatically
+5. Displays confirmation messages
+
+Even if you interrupt with Ctrl+C, the session is saved and analyzed.
+
+### Benefits
+
+- **Effortless Tracking**: No manual file editing needed
+- **Natural Interaction**: Just talk naturally about food and cooking
+- **Always Up-to-Date**: Your preferences and fridge stay current automatically
+- **Full History**: All updates include timestamps for tracking changes
 
 ## Customization
 
