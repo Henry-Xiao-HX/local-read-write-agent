@@ -1,10 +1,102 @@
 """Simple agent for reading and writing fridge and preference files."""
 from langchain_ollama import OllamaLLM
+from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.tools import BaseTool
 from langchain_core.messages import HumanMessage, AIMessage
 from typing import List, Dict, Any
 import sys
+import yaml
+from pathlib import Path
 from datetime import datetime
+
+
+# Configuration functions (integrated from src/utils/config.py)
+
+def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
+    """Load configuration from YAML file.
+    
+    Args:
+        config_path: Path to the configuration file
+        
+    Returns:
+        Dictionary containing configuration settings
+    """
+    config_file = Path(config_path)
+    
+    if not config_file.exists():
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    
+    with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    return config
+
+
+def get_ollama_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract Ollama configuration.
+    
+    Args:
+        config: Full configuration dictionary
+        
+    Returns:
+        Ollama-specific configuration
+    """
+    return config.get('ollama', {})
+
+
+def get_agent_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract agent configuration.
+    
+    Args:
+        config: Full configuration dictionary
+        
+    Returns:
+        Agent-specific configuration
+    """
+    return config.get('agent', {})
+
+
+def get_file_paths(config: Dict[str, Any]) -> Dict[str, str]:
+    """Extract file paths configuration.
+    
+    Args:
+        config: Full configuration dictionary
+        
+    Returns:
+        File paths dictionary
+    """
+    return config.get('files', {})
+
+
+# Tool creation functions (integrated from src/tools/file_tools.py)
+
+def create_file_tools(fridge_path: str, preferences_path: str) -> List[BaseTool]:
+    """Create file operation tools using Langchain's FileManagementToolkit.
+    
+    Args:
+        fridge_path: Path to the fridge inventory file
+        preferences_path: Path to the preferences file
+        
+    Returns:
+        List of Langchain Tools for file operations
+    """
+    # Get the working directory (where the files are located)
+    working_directory = str(Path.cwd())
+    
+    # Create the file management toolkit
+    # This provides read_file, write_file, list_directory, and other file tools
+    toolkit = FileManagementToolkit(
+        root_dir=working_directory,
+        selected_tools=["read_file", "write_file", "list_directory"]
+    )
+    
+    # Get the tools from the toolkit
+    tools = toolkit.get_tools()
+    
+    return tools
+
+
+# Agent functions
 
 
 def initialize_llm(ollama_config: Dict[str, Any]) -> OllamaLLM:

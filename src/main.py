@@ -3,14 +3,21 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
 import sys
+import argparse
 from pathlib import Path
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from utils.config import load_config, get_ollama_config, get_agent_config, get_file_paths
-from tools.file_tools import create_file_tools
-from agent import initialize_llm, create_agent_executor
+from agent import (
+    load_config,
+    get_ollama_config,
+    get_agent_config,
+    get_file_paths,
+    create_file_tools,
+    initialize_llm,
+    create_agent_executor
+)
 
 
 console = Console()
@@ -79,12 +86,70 @@ def print_status(fridge_path: str, preferences_path: str):
 
 
 def main():
-    """Main function to run the interactive agent."""
+    """Main function to run the agent (interactive or single prompt mode)."""
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description='Fridge Recipe Assistant - AI-powered cooking helper',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Interactive mode (default)
+  python src/main.py
+  
+  # Single prompt mode
+  python src/main.py --prompt "What can I cook for dinner?"
+  python src/main.py -p "Suggest a recipe with chicken"
+        """
+    )
+    parser.add_argument(
+        '-p', '--prompt',
+        type=str,
+        help='Send a single prompt without entering interactive mode'
+    )
+    
+    args = parser.parse_args()
+    
     agent_executor = None  # Initialize to None for error handling
     
     try:
         # Load configuration
         config = load_config()
+        
+        # If prompt is provided, run in single-prompt mode
+        if args.prompt:
+            ollama_config = get_ollama_config(config)
+            agent_config = get_agent_config(config)
+            file_paths = get_file_paths(config)
+            
+            # Initialize LLM
+            console.print("[yellow]Initializing Ollama LLM...[/yellow]")
+            llm = initialize_llm(ollama_config)
+            console.print("[green]✓ LLM initialized successfully![/green]\n")
+            
+            # Create tools
+            tools = create_file_tools(
+                file_paths.get('fridge', 'FRIDGE.md'),
+                file_paths.get('preferences', 'My-Preference.md')
+            )
+            
+            # Create agent executor
+            agent_executor = create_agent_executor(llm, tools, agent_config)
+            
+            # Process the prompt
+            console.print("[yellow]🤔 Processing your request...[/yellow]\n")
+            response = agent_executor.invoke({"input": args.prompt})
+            
+            # Extract and print output
+            output = response.get('output', 'No response generated.')
+            console.print("\n[bold green]Response:[/bold green]")
+            console.print(Panel(Markdown(output), border_style="green"))
+            console.print()
+            
+            # End session to save any updates
+            agent_executor.end_session()
+            return
+        
+        # Otherwise, run in interactive mode
         ollama_config = get_ollama_config(config)
         agent_config = get_agent_config(config)
         file_paths = get_file_paths(config)

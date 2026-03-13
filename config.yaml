@@ -1,6 +1,6 @@
 # Ollama Configuration
 ollama:
-  model: "gpt-oss:20b"  # Options: llama3.2, llama2, mistral, etc.
+  model: "llama3.2"  # Options: llama3.2, llama2, mistral, etc.
   base_url: "http://localhost:11434"
   temperature: 0.7
 

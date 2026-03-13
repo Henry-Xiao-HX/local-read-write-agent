@@ -1,234 +1,212 @@
-# 🍳 Local Read-Write Agent - Fridge Recipe Assistant
+# Local Read-Write Agent: LLM-Powered Fridge Assistant 🍳
 
-A Langchain-based AI agent that helps you manage your fridge inventory and suggests recipes based on what you have available and your personal preferences. The agent runs locally using Ollama and can read/write to local markdown files to track your fridge contents and preferences.
+A fun weekend project that turned into a surprisingly useful AI agent for managing your fridge and getting recipe suggestions. Built with local LLMs because who wants to pay API fees for asking "what's for dinner?"
 
-## Features
+## Architecture (The Fun Stuff)
 
-- 📋 **Fridge Inventory Management**: Track what's in your fridge with expiration dates
-- 🥘 **Recipe Suggestions**: Get personalized recipe recommendations based on available ingredients
-- ⚙️ **Preference Management**: Store and update your dietary restrictions, favorite cuisines, and cooking preferences
-- 🤖 **Interactive CLI**: Natural language conversation interface
-- 🔒 **Local & Private**: Runs entirely on your machine using Ollama (no API keys needed)
-- 📝 **Persistent Storage**: Uses markdown files for easy viewing and editing
-- 🧠 **Session Tracking**: Automatically updates preferences and fridge inventory based on conversations
+### How It Actually Works
+
+**Agent Design**: I built a simple ReAct-style agent that reads your fridge contents, remembers your preferences, and suggests recipes. No fancy frameworks—just a straightforward agent loop that talks to Ollama and manipulates markdown files.
+
+**Inference Pipeline**:
+- **Model**: Whatever Ollama model you want (I like llama3.2 for speed)
+- **Context Injection**: Automatically reads your fridge and preferences before every query
+- **Tool System**: LangChain's FileManagementToolkit for reading/writing markdown
+- **Memory**: Keeps conversation history in memory, analyzes it on exit
+
+**Data Flow**:
+```
+You ask a question → Agent reads FRIDGE.md + My-Preference.md → 
+LLM thinks about it → Gives you an answer → 
+(Optional) Updates files if needed
+```
+
+### Core Components
+
+**SimpleCookingAgent** (`src/agent.py`):
+- Custom agent class that's way simpler than using LangChain's built-in agents
+- Automatically loads your fridge/preferences into every prompt
+- Tracks your entire conversation session
+- On exit, uses the LLM to analyze what you talked about and updates your preferences
+
+**Inference Config** (`config.yaml`):
+- Temperature: 0.7 (sweet spot for creative but coherent recipes)
+- Max iterations: 15 (prevents the agent from going crazy)
+- Verbose mode so you can see what's happening
+
+**Tool System**:
+- `read_file`: Grabs markdown files
+- `write_file`: Saves updates
+- `list_directory`: Looks around (rarely used)
+
+## Technical Highlights
+
+### 1. Smart Session Tracking
+When you exit, the agent does something clever:
+- Reads your entire conversation
+- Asks the LLM: "Did the user mention any new preferences?"
+- Compares with existing preferences
+- Only updates if there's actually new info
+- Timestamps everything
+
+### 2. Context-Aware Prompting
+Every query automatically includes:
+- Current fridge inventory
+- Your food preferences
+- The actual question you asked
+
+This means the LLM always has full context without you repeating yourself.
+
+### 3. Two Modes of Operation
+- **Interactive**: Chat back and forth, perfect for exploring recipe ideas
+- **Single-shot**: One question, one answer, done. Great for scripts or quick queries.
+
+### 4. Markdown-Based State
+Why markdown? Because:
+- You can edit it manually with any text editor
+- Git-friendly (track your fridge history!)
+- Human-readable
+- No database setup required
 
 ## Prerequisites
 
-1. **Python 3.11+**: Required for running the application
-2. **uv**: Modern Python package manager ([installation guide](https://github.com/astral-sh/uv))
-3. **Ollama**: Local LLM runtime ([installation guide](https://ollama.ai))
+- **Python 3.11+**: Modern Python features
+- **uv**: Fast package manager (way better than pip)
+- **Ollama**: Run LLMs locally (free, private, fast)
 
-### Installing Ollama
-
-```bash
-# macOS/Linux
-curl -fsSL https://ollama.ai/install.sh | sh
-
-# Or download from https://ollama.ai
-```
-
-### Pull the Required Model
+## Quick Start
 
 ```bash
-# Pull the model specified in config.yaml (default: gpt-oss:20b)
-ollama pull gpt-oss:20b
-
-# Or use another model like llama3.2
-ollama pull llama3.2
-```
-
-## Installation
-
-1. **Clone or navigate to the project directory**:
-```bash
-cd local-read-write-agent
-```
-
-2. **Install dependencies using uv**:
-```bash
+# Install everything
 uv sync
-```
 
-This will create a virtual environment and install all required packages.
+# Get a model (llama3.2 is fast and good)
+ollama pull llama3.2
 
-## Configuration
-
-The application is configured via `config.yaml`:
-
-```yaml
-# Ollama Configuration
-ollama:
-  model: "gpt-oss:20b"  # Change to your preferred model
-  base_url: "http://localhost:11434"
-  temperature: 0.7
-
-# Agent Configuration
-agent:
-  max_iterations: 15
-  verbose: true
-  early_stopping_method: "generate"
-
-# File Paths
-files:
-  fridge: "FRIDGE.md"
-  preferences: "My-Preference.md"
-```
-
-### Available Ollama Models
-
-- `llama3.2` - Fast and efficient
-- `llama2` - Reliable general-purpose model
-- `mistral` - Good balance of speed and quality
-- `gpt-oss:20b` - Larger model for better responses
-
-Change the `model` field in `config.yaml` and pull it with `ollama pull <model-name>`.
-
-## Usage
-
-### Starting the Agent
-
-1. **Make sure Ollama is running**:
-```bash
-ollama serve
-```
-
-2. **Run the agent**:
-```bash
+# Start chatting
 uv run python src/main.py
 ```
 
-### Interactive Commands
+## Configuration
 
-- **Ask natural questions**:
-  - "What can I cook for dinner tonight?"
-  - "Suggest a recipe using chicken and tomatoes"
-  - "I just bought eggs and milk, update my fridge"
+Edit `config.yaml` to tune the agent:
 
-- **Special commands**:
-  - `/help` - Show available commands
-  - `/status` - View current fridge and preferences
-  - `/exit` or `/quit` - Exit the application
+```yaml
+ollama:
+  model: "llama3.2"           # Try mistral or gpt-oss:20b too
+  temperature: 0.7            # Higher = more creative recipes
+
+agent:
+  max_iterations: 15          # Safety limit
+  verbose: true               # See what's happening
+```
+
+## Usage Examples
+
+### Interactive Mode
+```bash
+uv run python src/main.py
+
+# Then chat naturally:
+# "What can I make with chicken and tomatoes?"
+# "I just bought eggs and milk"
+# "Suggest something spicy"
+```
+
+### Single-Shot Mode (for scripting)
+```bash
+uv run python src/main.py -p "What's in my fridge?"
+uv run python src/main.py -p "Quick dinner idea?"
+```
+
+### Commands
+- `/status`: See your current fridge and preferences
+- `/help`: Show available commands
+- `/exit`: Analyze session and save updates
+
+## Implementation Deep Dive
+
+### The Inference Strategy
+
+**Prompt Engineering**:
+I use a simple but effective prompt structure:
+1. System role: "You are a helpful cooking assistant"
+2. Context injection: Current fridge + preferences
+3. User question
+4. Clear instructions on what to do
+
+**Session Analysis Magic**:
+When you exit, the agent runs a 3-step pipeline:
+1. **Summarize**: "What did we talk about?"
+2. **Compare**: "Is any of this new information?"
+3. **Update**: "Write the updated preferences file"
+
+This means you can casually mention "I love Thai food" and it'll remember next time.
+
+### Why This Architecture?
+
+**Simplicity over complexity**: I could've used LangChain's full agent framework, but honestly, a simple loop with direct LLM calls is easier to understand and debug.
+
+**Local-first**: Everything runs on your machine. No API keys, no usage limits, no privacy concerns.
+
+**File-based state**: Markdown files are the perfect database for this use case. Easy to inspect, easy to edit, easy to version control.
+
+### Performance Notes
+
+- **Speed**: 2-5 seconds per response (depends on your model)
+- **Context**: Limited by model's context window (usually 4K-8K tokens)
+- **Memory**: Conversation history grows with session length
+- **Disk**: Minimal I/O, only writes on updates
 
 ## Project Structure
 
 ```
 local-read-write-agent/
-├── config.yaml              # Configuration file
-├── FRIDGE.md               # Fridge inventory (editable)
-├── My-Preference.md        # User preferences (editable)
-├── pyproject.toml          # Project dependencies
+├── config.yaml              # Tweak inference settings here
+├── FRIDGE.md               # Your inventory (edit manually if you want)
+├── My-Preference.md        # Your preferences (auto-updated)
 ├── src/
-│   ├── main.py            # Entry point
-│   ├── agent.py           # Agent setup
-│   ├── tools/
-│   │   └── file_tools.py  # File operation tools
-│   └── utils/
-│       └── config.py      # Configuration loader
-└── README.md
-```
-
-## How It Works
-
-1. **File Management Tools**: Uses Langchain's `FileManagementToolkit` for reading/writing markdown files
-2. **Session Memory**: Tracks conversations using LangChain's `ConversationBufferMemory`
-3. **Ollama Integration**: Connects to local Ollama instance for LLM inference
-4. **Interactive Loop**: Provides a continuous conversation interface with rich formatting
-5. **Automatic Updates**: Analyzes sessions on exit to update preferences and fridge inventory
-
-## Session Tracking & Auto-Updates
-
-### How Session Tracking Works
-
-The agent now automatically tracks your entire conversation session and intelligently updates your files when you exit.
-
-#### 1. **Automatic Preference Learning**
-When you exit (using `/exit` or `/quit`), the agent:
-- Analyzes the entire conversation history
-- Compares it with your existing `My-Preference.md` file
-- Identifies **NEW** preferences, likes, dislikes, or dietary restrictions you mentioned
-- Automatically appends new preferences with a timestamp
-
-**Example:**
-```
-You: I really love spicy Korean food, and I'm trying to avoid processed foods
-Assistant: [suggests Korean recipes]
-[On exit: Automatically adds "Korean" to favorite cuisines and "avoid processed foods" to health goals]
-```
-
-#### 2. **Automatic Fridge Updates After Cooking**
-When you exit, the agent also:
-- Detects if a recipe was discussed and confirmed to be made
-- Identifies which ingredients from your fridge were used
-- Automatically updates `FRIDGE.md` by removing or reducing used ingredients
-- Updates the "Last updated" timestamp
-
-**Example:**
-```
-You: What can I make with chicken and tomatoes?
-Assistant: [suggests Chicken Tomato Pasta]
-You: Perfect! I'll make that tonight.
-[On exit: Automatically removes chicken and tomatoes from fridge inventory]
-```
-
-#### 3. **Smart Detection**
-- **No Duplicates**: Only adds NEW information not already in your preferences
-- **Context-Aware**: Understands the full conversation context
-- **Confirmation Required**: Only updates fridge when you clearly confirm making a recipe
-- **Safe Updates**: All changes are additive and timestamped
-
-### Session Exit Behavior
-
-When you type `/exit` or `/quit`:
-1. Agent displays: "Analyzing session and updating files..."
-2. Analyzes conversation for new preferences
-3. Checks if any recipes were made
-4. Updates files automatically
-5. Displays confirmation messages
-
-Even if you interrupt with Ctrl+C, the session is saved and analyzed.
-
-### Benefits
-
-- **Effortless Tracking**: No manual file editing needed
-- **Natural Interaction**: Just talk naturally about food and cooking
-- **Always Up-to-Date**: Your preferences and fridge stay current automatically
-- **Full History**: All updates include timestamps for tracking changes
-
-## Customization
-
-### Editing Files Manually
-
-You can directly edit `FRIDGE.md` and `My-Preference.md` with any text editor. The agent will read the updated content on the next query.
-
-### Changing the Model
-
-Edit `config.yaml` and change the `model` field, then pull the new model:
-
-```bash
-ollama pull <new-model-name>
+│   ├── agent.py           # The brain of the operation
+│   └── main.py            # CLI interface
+└── pyproject.toml         # Dependencies
 ```
 
 ## Troubleshooting
 
-### "Error initializing Ollama"
+**"Error initializing Ollama"**:
+```bash
+ollama serve  # Make sure Ollama is running
+ollama list   # Check if your model is installed
+```
 
-- Make sure Ollama is running: `ollama serve`
-- Verify the model is installed: `ollama list`
-- Check the base_url in config.yaml matches your Ollama instance
+**Slow responses**:
+- Try a smaller model (llama3.2 is fast)
+- Use quantized versions (Q4, Q5)
+- Lower the temperature
 
-### "Import could not be resolved" errors in IDE
+**Agent seems confused**:
+- Check your markdown files aren't corrupted
+- Try `/status` to see what it's reading
+- Enable verbose mode in config.yaml
 
-These are type-checking warnings and don't affect runtime. The packages are installed in the virtual environment created by uv.
+## Future Ideas
 
-### Agent not finding files
-
-- Ensure `FRIDGE.md` and `My-Preference.md` exist in the project root
-- Check file paths in `config.yaml`
+- [ ] Add recipe database integration
+- [ ] Implement ingredient expiration warnings
+- [ ] Support for meal planning
+- [ ] Shopping list generation
+- [ ] Multi-user support (roommates!)
 
 ## License
 
-MIT License - Feel free to use and modify as needed.
+MIT - Do whatever you want with it!
 
-## Contributing
+## Credits
 
-Contributions are welcome! Feel free to open issues or submit pull requests.
+Built as a personal project to learn about:
+- Local LLM agents
+- File-based state management
+- Prompt engineering for context injection
+- Session-based preference learning
+
+Turns out it's actually pretty useful for real cooking decisions. Who knew? 🤷‍♂️
